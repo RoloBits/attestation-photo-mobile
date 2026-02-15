@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/RoloBits/attestation-photo-mobile/compare/v1.1.0...v1.1.1) (2026-02-15)
+
+
+### Bug Fixes
+
+* resolve cargo fmt + clippy CI failures ([8b2125d](https://github.com/RoloBits/attestation-photo-mobile/commit/8b2125df6812348d9e083e5d14c1886507bb99b8))
+
 # [1.1.0](https://github.com/RoloBits/attestation-photo-mobile/compare/v1.0.0...v1.1.0) (2026-02-15)
 
 
