@@ -1,0 +1,4 @@
+module attestation_mobileFFI {
+    header "attestation_mobileFFI.h"
+    export *
+}

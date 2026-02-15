@@ -58,9 +58,15 @@ export interface AttestedCameraError extends Error {
 export interface AttestedCameraProps {
   onCapture: (photo: SignedPhoto) => void;
   onError?: (error: AttestedCameraError) => void;
+  onCaptureStart?: () => void;
+  onLog?: (message: string) => void;
   style?: StyleProp<ViewStyle>;
   includeLocation?: boolean;
   nonce?: string;
   requireTrustedHardware?: boolean;
   cameraPosition?: "back" | "front";
+  /** Show white flash effect on capture. Default: true */
+  showFlash?: boolean;
+  /** App name shown in C2PA Content Credentials (signer identity, manifest, author). Default: "Attestation Mobile" */
+  appName?: string;
 }

@@ -15,7 +15,12 @@ interface NativeAttestationModule {
     sourcePhotoPath: string;
     latitude?: number;
     longitude?: number;
+    appName?: string;
   }): Promise<SignedPhoto>;
+  saveToGallery(params: {
+    filePath: string;
+    fileName?: string;
+  }): Promise<{ uri: string }>;
 }
 
 const moduleName =

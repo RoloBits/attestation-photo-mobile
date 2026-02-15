@@ -11,7 +11,6 @@ android {
 
     sourceSets {
         main {
-            java.srcDirs = ["."]
             jniLibs.srcDirs = ["src/main/jniLibs"]
         }
     }
@@ -39,4 +38,6 @@ tasks.named("preBuild") {
 
 dependencies {
     implementation "com.facebook.react:react-android:+"
+    implementation "net.java.dev.jna:jna:5.14.0@aar"
+    implementation "androidx.core:core:1.12.0"
 }

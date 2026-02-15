@@ -57,9 +57,39 @@ if ! rustup target list --installed | grep -q "^${TARGET}$"; then
 fi
 
 # ---------------------------------------------------------------------------
-# Build with cargo-ndk
+# Build with cargo-ndk (must cd into Rust dir; cargo-ndk runs cargo metadata
+# in CWD before processing --manifest-path)
 # ---------------------------------------------------------------------------
 echo "Building Rust for Android ($BUILD_TYPE)..."
-cargo ndk -t arm64-v8a -o "$JNILIBS_DIR" build --manifest-path "$MANIFEST" $PROFILE_FLAG
+cd "$RUST_DIR"
+cargo ndk -t arm64-v8a -o "$JNILIBS_DIR" build $PROFILE_FLAG
 
 echo "Rust Android build complete: $JNILIBS_DIR"
+
+# ---------------------------------------------------------------------------
+# Generate UniFFI Kotlin bindings (uses host-built library)
+# ---------------------------------------------------------------------------
+KOTLIN_OUT_DIR="$(dirname "$RUST_DIR")/native/android/src/main/java"
+echo "Generating UniFFI Kotlin bindings..."
+
+# Build host library for bindgen (if not already built)
+cargo build $PROFILE_FLAG 2>/dev/null
+
+if [ "$BUILD_TYPE" = "release" ]; then
+  HOST_LIB_DIR="$RUST_DIR/target/release"
+else
+  HOST_LIB_DIR="$RUST_DIR/target/debug"
+fi
+
+# Detect host library extension
+if [ -f "$HOST_LIB_DIR/libattestation_mobile_core.dylib" ]; then
+  HOST_LIB="$HOST_LIB_DIR/libattestation_mobile_core.dylib"
+elif [ -f "$HOST_LIB_DIR/libattestation_mobile_core.so" ]; then
+  HOST_LIB="$HOST_LIB_DIR/libattestation_mobile_core.so"
+else
+  echo "warning: Host library not found, skipping Kotlin bindgen" >&2
+  exit 0
+fi
+
+cargo run --bin uniffi-bindgen generate --library "$HOST_LIB" --language kotlin --out-dir "$KOTLIN_OUT_DIR"
+echo "UniFFI Kotlin bindings generated: $KOTLIN_OUT_DIR"

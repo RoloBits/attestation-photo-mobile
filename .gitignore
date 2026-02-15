@@ -22,6 +22,7 @@ build/
 
 # ---------- Android ----------
 native/android/src/main/jniLibs/
+rust/native/
 *.apk
 *.aab
 *.keystore
@@ -37,6 +38,14 @@ local.properties
 *.swo
 *~
 .DS_Store
+
+# ---------- Example app ----------
+example/android/app/build/
+example/android/.gradle/
+example/android/local.properties
+example/ios/Pods/
+example/ios/build/
+example/node_modules/
 
 # ---------- Environment / secrets ----------
 .env

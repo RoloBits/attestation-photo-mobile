@@ -13,6 +13,8 @@ Pod::Spec.new do |s|
   s.platform     = :ios, "14.0"
 
   s.source_files = "native/ios/**/*.{swift,m,h}"
+  s.preserve_paths = "native/ios/attestation_mobileFFI.modulemap",
+                     "native/ios/attestation_mobileFFI.h"
 
   s.script_phase = {
     :name => "Build Rust Static Library",
@@ -21,9 +23,15 @@ Pod::Spec.new do |s|
   }
 
   s.pod_target_xcconfig = {
+    "SWIFT_INCLUDE_PATHS" => '"${PODS_TARGET_SRCROOT}/native/ios"',
+    "HEADER_SEARCH_PATHS" => '"${PODS_TARGET_SRCROOT}/native/ios"',
+  }
+
+  # Link the Rust static library into the final app binary
+  s.user_target_xcconfig = {
     "LIBRARY_SEARCH_PATHS" => [
-      '"${PODS_TARGET_SRCROOT}/rust/target/universal-ios/release"',
-      '"${PODS_TARGET_SRCROOT}/rust/target/universal-ios/debug"',
+      '"${PODS_ROOT}/../../node_modules/@RoloBits/attestation-photo-mobile/rust/target/universal-ios/release"',
+      '"${PODS_ROOT}/../../node_modules/@RoloBits/attestation-photo-mobile/rust/target/universal-ios/debug"',
     ].join(" "),
     "OTHER_LDFLAGS" => "-lattestation_mobile_core",
   }

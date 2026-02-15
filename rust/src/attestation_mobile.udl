@@ -34,6 +34,7 @@ dictionary C2paSignedPhoto {
 };
 
 dictionary CaptureContext {
+  string app_name;
   string device_model;
   string os_version;
   string captured_at_iso8601;
@@ -57,6 +58,7 @@ enum AttestationError {
   "ManifestBuildFailed",
   "CertificateError",
   "JpegEmbedFailed",
+  "JpegValidationFailed",
 };
 
 [Error]

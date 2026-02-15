@@ -1,8 +1,64 @@
 import Foundation
+import CoreLocation
 import CryptoKit
 import React
 import Security
 import UIKit
+
+// ---------------------------------------------------------------------------
+// One-shot GPS fetcher (semaphore-based, dispatches to main for CLLocationManager)
+// ---------------------------------------------------------------------------
+
+private class OneShotLocationFetcher: NSObject, CLLocationManagerDelegate {
+  private let semaphore = DispatchSemaphore(value: 0)
+  private var result: CLLocation?
+  private var manager: CLLocationManager?
+
+  func fetch() -> CLLocation? {
+    let status: CLAuthorizationStatus
+    if #available(iOS 14.0, *) {
+      let mgr = CLLocationManager()
+      status = mgr.authorizationStatus
+    } else {
+      status = CLLocationManager.authorizationStatus()
+    }
+
+    guard status == .authorizedWhenInUse || status == .authorizedAlways else {
+      return nil
+    }
+
+    DispatchQueue.main.async { [self] in
+      let mgr = CLLocationManager()
+      mgr.delegate = self
+      mgr.desiredAccuracy = kCLLocationAccuracyBest
+      self.manager = mgr
+      mgr.requestLocation()
+    }
+
+    let timeout = semaphore.wait(timeout: .now() + 5.0)
+    if timeout == .timedOut {
+      DispatchQueue.main.async { [self] in
+        manager?.delegate = nil
+        manager = nil
+      }
+    }
+    return result
+  }
+
+  func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+    result = locations.last
+    manager.delegate = nil
+    self.manager = nil
+    semaphore.signal()
+  }
+
+  func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+    result = nil
+    manager.delegate = nil
+    self.manager = nil
+    semaphore.signal()
+  }
+}
 
 @objc(RNAttestationMobile)
 class RNAttestationMobile: NSObject {
@@ -144,7 +200,7 @@ class RNAttestationMobile: NSObject {
 
   /// Build a self-signed X.509 v3 certificate wrapping a Secure Enclave public key.
   /// The certificate uses the same Secure Enclave key to sign the TBSCertificate.
-  private func buildSelfSignedCertificateDER(privateKey: SecKey) throws -> Data {
+  private func buildSelfSignedCertificateDER(privateKey: SecKey, appName: String = "Attestation Mobile") throws -> Data {
     guard let publicKey = SecKeyCopyPublicKey(privateKey) else {
       throw NSError(
         domain: "RNAttestationMobile",
@@ -185,12 +241,19 @@ class RNAttestationMobile: NSObject {
     let ecdsaSha256OID: [UInt8] = [0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x02]
     let signatureAlgorithm = asn1Sequence(ecdsaSha256OID)
 
-    // Issuer and Subject: CN=AtomicC2PA Self-Signed
+    // Issuer and Subject: O=<appName>, CN=<appName> Self-Signed
+    // Organization (O=) is required by c2pa post-sign verification
+    let orgOID: [UInt8] = [0x06, 0x03, 0x55, 0x04, 0x0A]
+    let orgValue = asn1UTF8String(appName)
+    let orgAtv = asn1Sequence(orgOID + orgValue)
+    let orgRdnSet = asn1Set(orgAtv)
+
     let cnOID: [UInt8] = [0x06, 0x03, 0x55, 0x04, 0x03]
-    let cnValue = asn1UTF8String("AtomicC2PA Self-Signed")
-    let atv = asn1Sequence(cnOID + cnValue)
-    let rdnSet = asn1Set(atv)
-    let name = asn1Sequence(rdnSet)
+    let cnValue = asn1UTF8String("\(appName) Self-Signed")
+    let cnAtv = asn1Sequence(cnOID + cnValue)
+    let cnRdnSet = asn1Set(cnAtv)
+
+    let name = asn1Sequence(orgRdnSet + cnRdnSet)
 
     // Validity: now to +1 year
     let now = Date()
@@ -203,6 +266,35 @@ class RNAttestationMobile: NSObject {
     let versionInt: [UInt8] = [0x02, 0x01, 0x02] // INTEGER 2 = v3
     let version: [UInt8] = [0xA0, UInt8(versionInt.count)] + versionInt
 
+    // --- Extensions ---
+
+    // Key Usage (critical): digitalSignature (bit 0)
+    let keyUsageOID: [UInt8] = [0x06, 0x03, 0x55, 0x1D, 0x0F] // 2.5.29.15
+    let keyUsageCritical: [UInt8] = [0x01, 0x01, 0xFF] // BOOLEAN TRUE
+    let keyUsageBitString: [UInt8] = [0x03, 0x02, 0x07, 0x80] // BIT STRING: 7 unused, 0x80
+    let keyUsageValue = asn1OctetString(keyUsageBitString)
+    let keyUsageExtension = asn1Sequence(keyUsageOID + keyUsageCritical + keyUsageValue)
+
+    // Extended Key Usage: emailProtection (1.3.6.1.5.5.7.3.4)
+    let ekuOID: [UInt8] = [0x06, 0x03, 0x55, 0x1D, 0x25] // 2.5.29.37
+    let emailProtectionOID: [UInt8] = [0x06, 0x08, 0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x04]
+    let ekuValueSeq = asn1Sequence(emailProtectionOID)
+    let ekuValue = asn1OctetString(ekuValueSeq)
+    let ekuExtension = asn1Sequence(ekuOID + ekuValue)
+
+    // Authority Key Identifier (OID 2.5.29.35)
+    // keyIdentifier = SHA-1 hash of the raw public key (X9.63 uncompressed point)
+    let keyIdDigest = Insecure.SHA1.hash(data: pubKeyData)
+    let keyId: [UInt8] = Array(keyIdDigest)
+    let akiOID: [UInt8] = [0x06, 0x03, 0x55, 0x1D, 0x23] // 2.5.29.35
+    let akiKeyId: [UInt8] = [0x80, 0x14] + keyId // [0] IMPLICIT OCTET STRING (20 bytes)
+    let akiSeq = asn1Sequence(akiKeyId)
+    let akiValue = asn1OctetString(akiSeq)
+    let akiExtension = asn1Sequence(akiOID + akiValue)
+
+    let extensions = asn1Sequence(akiExtension + keyUsageExtension + ekuExtension)
+    let extensionsTagged = asn1ExplicitTag(3, extensions) // explicit tag [3]
+
     // TBSCertificate
     let tbsCertBytes = asn1Sequence(
       version
@@ -212,6 +304,7 @@ class RNAttestationMobile: NSObject {
       + validity
       + name        // subject (self-signed, same as issuer)
       + subjectPublicKeyInfo
+      + extensionsTagged
     )
 
     // Sign the TBSCertificate with the Secure Enclave key
@@ -280,17 +373,28 @@ class RNAttestationMobile: NSObject {
     return [0x17] + asn1Length(bytes.count) + bytes
   }
 
+  private func asn1OctetString(_ data: [UInt8]) -> [UInt8] {
+    return [0x04] + asn1Length(data.count) + data
+  }
+
+  private func asn1ExplicitTag(_ tag: UInt8, _ content: [UInt8]) -> [UInt8] {
+    let tagByte = 0xA0 | (tag & 0x1F)
+    return [tagByte] + asn1Length(content.count) + content
+  }
+
   // ---------------------------------------------------------------------------
   // SecureEnclaveHardwareSigner: implements the UniFFI HardwareSigner protocol
   // ---------------------------------------------------------------------------
 
-  class SecureEnclaveHardwareSigner: HardwareSignerProtocol {
+  class SecureEnclaveHardwareSigner: HardwareSigner {
     private let privateKey: SecKey
     private let module: RNAttestationMobile
+    private let appName: String
 
-    init(privateKey: SecKey, module: RNAttestationMobile) {
+    init(privateKey: SecKey, module: RNAttestationMobile, appName: String = "Attestation Mobile") {
       self.privateKey = privateKey
       self.module = module
+      self.appName = appName
     }
 
     func sign(data: Data) throws -> Data {
@@ -298,7 +402,7 @@ class RNAttestationMobile: NSObject {
     }
 
     func certificateDer() throws -> Data {
-      return try module.buildSelfSignedCertificateDER(privateKey: privateKey)
+      return try module.buildSelfSignedCertificateDER(privateKey: privateKey, appName: appName)
     }
   }
 
@@ -389,23 +493,32 @@ class RNAttestationMobile: NSObject {
   ) {
     DispatchQueue.global(qos: .userInitiated).async { [self] in
       let nonce = params["nonce"] as? String
+      let appName = (params["appName"] as? String) ?? "Attestation Mobile"
       let now = ISO8601DateFormatter().string(from: Date())
 
       do {
         let source = try loadSourcePhoto(params)
         let privateKey = try getOrCreatePrivateKey()
-        let signer = SecureEnclaveHardwareSigner(privateKey: privateKey, module: self)
+        let signer = SecureEnclaveHardwareSigner(privateKey: privateKey, module: self, appName: appName)
 
         var latitude: NSNumber? = nil
         var longitude: NSNumber? = nil
         if let includeLocation = params["includeLocation"] as? Bool, includeLocation {
-          latitude = params["latitude"] as? NSNumber
-          longitude = params["longitude"] as? NSNumber
+          if let lat = params["latitude"] as? NSNumber, let lon = params["longitude"] as? NSNumber {
+            latitude = lat
+            longitude = lon
+          } else {
+            if let loc = OneShotLocationFetcher().fetch() {
+              latitude = NSNumber(value: loc.coordinate.latitude)
+              longitude = NSNumber(value: loc.coordinate.longitude)
+            }
+          }
         }
 
         let context = CaptureContext(
-          deviceModel: UIDevice.current.model,
-          osVersion: UIDevice.current.systemVersion,
+          appName: appName,
+          deviceModel: "Apple \(UIDevice.current.model)",
+          osVersion: "iOS \(UIDevice.current.systemVersion)",
           capturedAtIso8601: now,
           trustLevel: currentTrustLevel(),
           nonce: nonce,
@@ -428,13 +541,16 @@ class RNAttestationMobile: NSObject {
 
         let metadata: [String: Any] = {
           var m: [String: Any] = [
-            "deviceModel": UIDevice.current.model,
-            "osVersion": UIDevice.current.systemVersion,
+            "deviceModel": "Apple \(UIDevice.current.model)",
+            "osVersion": "iOS \(UIDevice.current.systemVersion)",
             "capturedAtIso8601": now,
             "sourceSha256": result.assetHashHex,
             "pipelineMode": "c2pa-atomic"
           ]
           if let nonce = nonce { m["nonce"] = nonce }
+          if let lat = latitude, let lon = longitude {
+            m["location"] = ["latitude": lat.doubleValue, "longitude": lon.doubleValue]
+          }
           return m
         }()
 
