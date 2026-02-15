@@ -8,8 +8,15 @@
   "files": [
     "dist",
     "src",
-    "native",
-    "rust",
+    "native/ios",
+    "native/android/src",
+    "native/android/build.gradle",
+    "rust/src",
+    "rust/Cargo.toml",
+    "rust/Cargo.lock",
+    "rust/build.rs",
+    "rust/.clippy.toml",
+    "rust/rustfmt.toml",
     "scripts",
     "RNAttestationMobile.podspec",
     "react-native.config.js"
