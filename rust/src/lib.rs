@@ -9,7 +9,7 @@ use std::io::Cursor;
 // `build_and_sign_c2pa` runs synchronously on a single thread, but would
 // need refactoring if errors are ever formatted on a different thread.
 thread_local! {
-    static LAST_ERROR_DETAIL: RefCell<String> = RefCell::new(String::new());
+    static LAST_ERROR_DETAIL: RefCell<String> = const { RefCell::new(String::new()) };
 }
 
 fn set_error_detail(detail: String) {
@@ -19,9 +19,7 @@ fn set_error_detail(detail: String) {
 }
 
 fn take_error_detail() -> String {
-    LAST_ERROR_DETAIL.with(|cell| {
-        cell.borrow_mut().split_off(0)
-    })
+    LAST_ERROR_DETAIL.with(|cell| cell.borrow_mut().split_off(0))
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +195,11 @@ fn decimal_to_exif_dms(degrees: f64, is_latitude: bool) -> String {
     let d = abs.floor() as u32;
     let minutes = (abs - d as f64) * 60.0;
     let suffix = if is_latitude {
-        if degrees >= 0.0 { 'N' } else { 'S' }
+        if degrees >= 0.0 {
+            'N'
+        } else {
+            'S'
+        }
     } else if degrees >= 0.0 {
         'E'
     } else {
@@ -462,21 +464,26 @@ pub fn build_and_sign_c2pa(
     let manifest_json = build_manifest_definition(&context);
 
     #[cfg(debug_assertions)]
-    eprintln!("[attestation-mobile] manifest_json: {}", &manifest_json[..std::cmp::min(200, manifest_json.len())]);
+    eprintln!(
+        "[attestation-mobile] manifest_json: {}",
+        &manifest_json[..std::cmp::min(200, manifest_json.len())]
+    );
 
-    let mut builder = c2pa::Builder::from_json(&manifest_json)
-        .map_err(|e| {
-            #[cfg(debug_assertions)]
-            eprintln!("[attestation-mobile] Builder::from_json error: {:?}", e);
-            set_error_detail(format!("{:?}", e));
-            AttestationError::ManifestBuildFailed
-        })?;
+    let mut builder = c2pa::Builder::from_json(&manifest_json).map_err(|e| {
+        #[cfg(debug_assertions)]
+        eprintln!("[attestation-mobile] Builder::from_json error: {:?}", e);
+        set_error_detail(format!("{:?}", e));
+        AttestationError::ManifestBuildFailed
+    })?;
 
     let mut source = Cursor::new(&jpeg_bytes);
     let mut dest = Cursor::new(Vec::new());
 
     #[cfg(debug_assertions)]
-    eprintln!("[attestation-mobile] calling builder.sign with {} bytes of JPEG...", jpeg_bytes.len());
+    eprintln!(
+        "[attestation-mobile] calling builder.sign with {} bytes of JPEG...",
+        jpeg_bytes.len()
+    );
 
     builder
         .sign(&adapter, "image/jpeg", &mut source, &mut dest)
@@ -491,7 +498,10 @@ pub fn build_and_sign_c2pa(
         })?;
 
     #[cfg(debug_assertions)]
-    eprintln!("[attestation-mobile] sign succeeded, output {} bytes", dest.get_ref().len());
+    eprintln!(
+        "[attestation-mobile] sign succeeded, output {} bytes",
+        dest.get_ref().len()
+    );
 
     Ok(C2paSignedPhoto {
         signed_jpeg: dest.into_inner(),
