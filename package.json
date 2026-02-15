@@ -51,7 +51,8 @@
     "url": "https://github.com/RoloBits/attestation-photo-mobile.git"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   },
   "license": "MIT"
 }
