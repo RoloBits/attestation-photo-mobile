@@ -30,8 +30,8 @@ Pod::Spec.new do |s|
   # Link the Rust static library into the final app binary
   s.user_target_xcconfig = {
     "LIBRARY_SEARCH_PATHS" => [
-      '"${PODS_ROOT}/../../node_modules/@RoloBits/attestation-photo-mobile/rust/target/universal-ios/release"',
-      '"${PODS_ROOT}/../../node_modules/@RoloBits/attestation-photo-mobile/rust/target/universal-ios/debug"',
+      '"${PODS_ROOT}/../../node_modules/@rolobits/attestation-photo-mobile/rust/target/universal-ios/release"',
+      '"${PODS_ROOT}/../../node_modules/@rolobits/attestation-photo-mobile/rust/target/universal-ios/debug"',
     ].join(" "),
     "OTHER_LDFLAGS" => "-lattestation_mobile_core",
   }

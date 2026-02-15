@@ -14,11 +14,11 @@ import {
   Text,
   View,
 } from 'react-native';
-import {AttestedCamera} from '@RoloBits/attestation-photo-mobile';
+import {AttestedCamera} from '@rolobits/attestation-photo-mobile';
 import type {
   SignedPhoto,
   AttestedCameraError,
-} from '@RoloBits/attestation-photo-mobile';
+} from '@rolobits/attestation-photo-mobile';
 
 type AppState =
   | {kind: 'camera'}

@@ -1,5 +1,5 @@
 <p align="center">
-     <h1 align="center">@RoloBits/attestation-photo-mobile</h1>
+     <h1 align="center">@rolobits/attestation-photo-mobile</h1>
      <p align="center">
        Hardware-attested photo capture for React Native with embedded C2PA manifests.
      </p>
@@ -20,7 +20,7 @@ Every photo taken through this SDK is signed by the device's tamper-resistant ha
 ### 1. npm
 
 ```bash
-npm install @RoloBits/attestation-photo-mobile react-native-vision-camera
+npm install @rolobits/attestation-photo-mobile react-native-vision-camera
 ```
 
 | Peer dependency | Version |
@@ -66,7 +66,7 @@ The Rust shared library is compiled automatically via a Gradle task. Just build 
 ## Quick start
 
 ```tsx
-import { AttestedCamera } from "@RoloBits/attestation-photo-mobile";
+import { AttestedCamera } from "@rolobits/attestation-photo-mobile";
 
 export function CameraScreen() {
   return (
