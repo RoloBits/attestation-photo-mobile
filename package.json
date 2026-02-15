@@ -1,0 +1,57 @@
+{
+  "name": "@RoloBits/attestation-photo-mobile",
+  "version": "0.0.0-development",
+  "description": "Atomic C2PA camera SDK for React Native",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "source": "src/index.ts",
+  "files": [
+    "dist",
+    "src",
+    "native",
+    "rust",
+    "scripts",
+    "RNAttestationMobile.podspec",
+    "react-native.config.js"
+  ],
+  "react-native": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "rust:check": "cd rust && cargo check",
+    "rust:fmt": "cd rust && cargo fmt",
+    "rust:clippy": "cd rust && cargo clippy -- -D warnings",
+    "rust:build": "cd rust && cargo build --release",
+    "check": "npm run typecheck && npm run lint && npm run rust:check",
+    "release": "semantic-release",
+    "prepare": "husky"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-native": ">=0.73",
+    "react-native-vision-camera": ">=4"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.2",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@types/react": "^18.3.12",
+    "@types/react-native": "^0.73.0",
+    "eslint": "9.39.2",
+    "husky": "9.1.7",
+    "react-native-vision-camera": "4.7.3",
+    "semantic-release": "^24.2.3",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "8.55.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RoloBits/attestation-photo-mobile.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "license": "MIT"
+}

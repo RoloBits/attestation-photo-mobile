@@ -1,0 +1,44 @@
+# ---------- Node / JS ----------
+node_modules/
+dist/
+*.tsbuildinfo
+.npm
+.yarn/
+*.log
+
+# ---------- Rust ----------
+rust/target/
+**/*.rs.bk
+
+# ---------- iOS ----------
+*.xcworkspace
+*.xcuserdata
+Pods/
+DerivedData/
+build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# ---------- Android ----------
+native/android/src/main/jniLibs/
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+.gradle/
+local.properties
+*.hprof
+
+# ---------- IDE ----------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ---------- Environment / secrets ----------
+.env
+.env.*
+!.env.example

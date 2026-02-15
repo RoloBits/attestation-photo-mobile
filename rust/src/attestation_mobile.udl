@@ -1,0 +1,68 @@
+namespace attestation_mobile {
+  // Existing: hash raw frame bytes
+  AtomicHashResult hash_frame_bytes(bytes frame_bytes);
+
+  // Existing: placeholder sidecar (kept for backward compatibility)
+  AtomicSignedArtifact build_c2pa_placeholder(
+    bytes jpg_bytes,
+    string signature_base64,
+    string metadata_json
+  );
+
+  // New: full C2PA pipeline with embedded JUMBF manifest
+  [Throws=AttestationError]
+  C2paSignedPhoto build_and_sign_c2pa(
+    bytes          jpeg_bytes,
+    CaptureContext context,
+    HardwareSigner signer
+  );
+};
+
+dictionary AtomicHashResult {
+  string sha256_hex;
+};
+
+dictionary AtomicSignedArtifact {
+  bytes jpg_bytes;
+  string manifest_json;
+};
+
+dictionary C2paSignedPhoto {
+  bytes  signed_jpeg;
+  string manifest_json;
+  string asset_hash_hex;
+};
+
+dictionary CaptureContext {
+  string device_model;
+  string os_version;
+  string captured_at_iso8601;
+  string trust_level;
+  string? nonce;
+  f64?   latitude;
+  f64?   longitude;
+};
+
+// Rust calls into native for signing + certificate export
+callback interface HardwareSigner {
+  [Throws=SignerError]
+  bytes sign(bytes data);
+  [Throws=SignerError]
+  bytes certificate_der();
+};
+
+[Error]
+enum AttestationError {
+  "SigningFailed",
+  "ManifestBuildFailed",
+  "CertificateError",
+  "JpegEmbedFailed",
+};
+
+[Error]
+enum SignerError {
+  "HardwareUnavailable",
+  "KeyNotFound",
+  "SignatureOperationFailed",
+  "CertificateExportFailed",
+};

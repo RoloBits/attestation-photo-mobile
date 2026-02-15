@@ -1,0 +1,17 @@
+# ── Branch name check ────────────────────────────────────────
+# Allowed patterns:
+#   feat/*, fix/*, chore/*, docs/*, refactor/*, test/*, ci/*
+#   release/*, hotfix/*
+#   main, develop
+branch=$(git rev-parse --abbrev-ref HEAD)
+pattern="^(feat|fix|chore|docs|refactor|test|ci|release|hotfix)/.+$|^(main|develop)$"
+
+if ! echo "$branch" | grep -qE "$pattern"; then
+  echo "Branch name '$branch' does not match the required pattern."
+  echo "Use: <type>/<description>  (e.g. feat/add-camera, fix/signing-bug)"
+  echo "Allowed types: feat, fix, chore, docs, refactor, test, ci, release, hotfix"
+  exit 1
+fi
+
+# ── Build & lint checks ─────────────────────────────────────
+npm run check

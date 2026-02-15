@@ -1,0 +1,42 @@
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+
+android {
+    namespace "com.attestation.mobile"
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 28
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs = ["."]
+            jniLibs.srcDirs = ["src/main/jniLibs"]
+        }
+    }
+}
+
+def rustDir = "${project.projectDir}/../../rust"
+def jniLibsDir = "${project.projectDir}/src/main/jniLibs"
+def buildScript = "${project.projectDir}/../../scripts/build-rust-android.sh"
+
+tasks.register("buildRustAndroid", Exec) {
+    def buildType = project.hasProperty("isRelease") ? "release" : "debug"
+
+    inputs.dir(rustDir + "/src")
+    inputs.file(rustDir + "/Cargo.toml")
+    outputs.dir(jniLibsDir)
+
+    commandLine "bash", buildScript, rustDir, jniLibsDir, buildType
+
+    environment "ANDROID_NDK_HOME", android.ndkDirectory.absolutePath
+}
+
+tasks.named("preBuild") {
+    dependsOn("buildRustAndroid")
+}
+
+dependencies {
+    implementation "com.facebook.react:react-android:+"
+}
