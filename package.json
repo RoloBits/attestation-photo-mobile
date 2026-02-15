@@ -1,6 +1,6 @@
 {
   "name": "@RoloBits/attestation-photo-mobile",
-  "version": "0.0.0-development",
+  "version": "1.0.0",
   "description": "Atomic C2PA camera SDK for React Native",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
