@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/RoloBits/attestation-photo-mobile/compare/v1.1.1...v1.1.2) (2026-02-15)
+
+
+### Bug Fixes
+
+* fix docs ([1a47bd4](https://github.com/RoloBits/attestation-photo-mobile/commit/1a47bd43d57576e9aca7e9d2b2b7024384c37006))
+
 ## [1.1.1](https://github.com/RoloBits/attestation-photo-mobile/compare/v1.1.0...v1.1.1) (2026-02-15)
 
 
