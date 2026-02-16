@@ -2,6 +2,7 @@ import { NativeModules, Platform } from "react-native";
 import type {
   AttestationStatus,
   CaptureAndSignParams,
+  CaptureLocation,
   HashPhotoAtPathParams,
   SaveToGalleryParams,
   SignPayloadParams,
@@ -17,6 +18,7 @@ interface NativeAttestationModule {
   }>;
   hashPhotoAtPath(params: HashPhotoAtPathParams): Promise<{ sha256Hex: string }>;
   captureAndSignAtomic(params: CaptureAndSignParams): Promise<SignedPhoto>;
+  prefetchLocation(): Promise<Pick<CaptureLocation, "latitude" | "longitude"> | null>;
   saveToGallery(params: SaveToGalleryParams): Promise<{ uri: string }>;
 }
 
@@ -66,6 +68,13 @@ export function hashPhotoAtPath(
   params: HashPhotoAtPathParams
 ): Promise<{ sha256Hex: string }> {
   return requireNativeModule().hashPhotoAtPath(params);
+}
+
+export function prefetchLocation(): Promise<Pick<
+  CaptureLocation,
+  "latitude" | "longitude"
+> | null> {
+  return requireNativeModule().prefetchLocation();
 }
 
 export function signPayload(

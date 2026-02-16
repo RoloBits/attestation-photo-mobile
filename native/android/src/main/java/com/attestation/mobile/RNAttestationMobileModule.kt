@@ -45,6 +45,14 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
 
   private val keyAlias = "com.attestation.mobile.signingkey"
 
+  // --- Caches for latency optimization ---
+  private var cachedSigningKey: PrivateKey? = null
+  private var cachedTrustLevel: String? = null
+  private var cachedCertDER: ByteArray? = null
+  private var cachedCertAppName: String? = null
+  private var cachedLocation: Location? = null
+  private var cachedLocationTimestamp: Long = 0L
+
   override fun getName(): String = "RNAttestationMobile"
 
   private fun isPhysicalDevice(): Boolean {
@@ -110,14 +118,23 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
   }
 
   private fun getOrCreateSigningKey(): Pair<PrivateKey, String> {
-    val existing = getExistingPrivateKey()
-    if (existing != null) {
-      return existing to readTrustLevelFromPrivateKey(existing)
+    val ck = cachedSigningKey
+    val ct = cachedTrustLevel
+    if (ck != null && ct != null) {
+      return ck to ct
     }
 
-    return try {
-      val key = createSigningKey(preferStrongBox = true)
-      key to readTrustLevelFromPrivateKey(key)
+    val existing = getExistingPrivateKey()
+    if (existing != null) {
+      val trust = readTrustLevelFromPrivateKey(existing)
+      cachedSigningKey = existing
+      cachedTrustLevel = trust
+      return existing to trust
+    }
+
+    val (key, trust) = try {
+      val k = createSigningKey(preferStrongBox = true)
+      k to readTrustLevelFromPrivateKey(k)
     } catch (_: StrongBoxUnavailableException) {
       val fallback = createSigningKey(preferStrongBox = false)
       fallback to readTrustLevelFromPrivateKey(fallback)
@@ -125,6 +142,9 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
       val fallback = createSigningKey(preferStrongBox = false)
       fallback to readTrustLevelFromPrivateKey(fallback)
     }
+    cachedSigningKey = key
+    cachedTrustLevel = trust
+    return key to trust
   }
 
   private fun sha256Hex(bytes: ByteArray): String {
@@ -149,7 +169,7 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
     // Retry loop for camera file write race condition
     var retries = 0
     val maxRetries = 5
-    val retryDelayMs = 100L
+    val retryDelayMs = 50L
     while (retries < maxRetries) {
       if (source.exists() && source.length() > 100) break
       Thread.sleep(retryDelayMs)
@@ -431,7 +451,14 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
     }
 
     override fun certificateDer(): ByteArray {
-      return module.buildSelfSignedCertificateDER(privateKey, appName)
+      val cached = module.cachedCertDER
+      if (cached != null && module.cachedCertAppName == appName) {
+        return cached
+      }
+      val cert = module.buildSelfSignedCertificateDER(privateKey, appName)
+      module.cachedCertDER = cert
+      module.cachedCertAppName = appName
+      return cert
     }
   }
 
@@ -456,7 +483,13 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
   @ReactMethod
   fun ensureHardwareKey(promise: Promise) {
     try {
-      val (_, trustLevel) = getOrCreateSigningKey()
+      val (privateKey, trustLevel) = getOrCreateSigningKey()
+      // Pre-build and cache the self-signed cert so the first capture
+      // doesn't pay the ~50-100ms cert-generation cost.
+      if (cachedCertDER == null) {
+        cachedCertDER = buildSelfSignedCertificateDER(privateKey)
+        cachedCertAppName = "Attestation Mobile"
+      }
       val result = Arguments.createMap()
       result.putString("trustLevel", trustLevel)
       promise.resolve(result)
@@ -605,6 +638,37 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
         promise.resolve(result)
       } catch (t: Throwable) {
         promise.reject("E_CAPTURE_FAILED", "captureAndSignAtomic failed: ${t.message}", t)
+      }
+    }.start()
+  }
+
+  @ReactMethod
+  fun prefetchLocation(promise: Promise) {
+    Thread {
+      try {
+        // Return cached location if less than 30 seconds old
+        val cached = cachedLocation
+        if (cached != null && System.currentTimeMillis() - cachedLocationTimestamp < 30_000L) {
+          val result = Arguments.createMap()
+          result.putDouble("latitude", cached.latitude)
+          result.putDouble("longitude", cached.longitude)
+          promise.resolve(result)
+          return@Thread
+        }
+
+        val loc = fetchLocationWithTimeout()
+        if (loc != null) {
+          cachedLocation = loc
+          cachedLocationTimestamp = System.currentTimeMillis()
+          val result = Arguments.createMap()
+          result.putDouble("latitude", loc.latitude)
+          result.putDouble("longitude", loc.longitude)
+          promise.resolve(result)
+        } else {
+          promise.resolve(null)
+        }
+      } catch (t: Throwable) {
+        promise.resolve(null)
       }
     }.start()
   }

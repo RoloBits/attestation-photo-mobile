@@ -65,6 +65,13 @@ private class OneShotLocationFetcher: NSObject, CLLocationManagerDelegate {
 class RNAttestationMobile: NSObject {
   private let keyAlias = "com.attestation.mobile.signingkey"
 
+  // --- Caches for latency optimization ---
+  private var cachedPrivateKey: SecKey?
+  private var cachedCertDER: Data?
+  private var cachedCertAppName: String?
+  private var cachedLocation: CLLocation?
+  private var cachedLocationTimestamp: Date?
+
   @objc static func requiresMainQueueSetup() -> Bool {
     return false
   }
@@ -136,10 +143,17 @@ class RNAttestationMobile: NSObject {
   }
 
   private func getOrCreatePrivateKey() throws -> SecKey {
-    if let key = loadPrivateKey() {
-      return key
+    if let cached = cachedPrivateKey {
+      return cached
     }
-    return try createPrivateKey()
+    let key: SecKey
+    if let existing = loadPrivateKey() {
+      key = existing
+    } else {
+      key = try createPrivateKey()
+    }
+    cachedPrivateKey = key
+    return key
   }
 
   private func currentTrustLevel() -> String {
@@ -404,7 +418,13 @@ class RNAttestationMobile: NSObject {
     }
 
     func certificateDer() throws -> Data {
-      return try module.buildSelfSignedCertificateDER(privateKey: privateKey, appName: appName)
+      if let cached = module.cachedCertDER, module.cachedCertAppName == appName {
+        return cached
+      }
+      let cert = try module.buildSelfSignedCertificateDER(privateKey: privateKey, appName: appName)
+      module.cachedCertDER = cert
+      module.cachedCertAppName = appName
+      return cert
     }
   }
 
@@ -435,7 +455,13 @@ class RNAttestationMobile: NSObject {
     rejecter reject: @escaping RCTPromiseRejectBlock
   ) {
     do {
-      _ = try getOrCreatePrivateKey()
+      let key = try getOrCreatePrivateKey()
+      // Pre-build and cache the self-signed cert so the first capture
+      // doesn't pay the ~50-100ms cert-generation cost.
+      if cachedCertDER == nil {
+        cachedCertDER = try buildSelfSignedCertificateDER(privateKey: key)
+        cachedCertAppName = "Attestation Mobile"
+      }
       resolve(["trustLevel": currentTrustLevel()])
     } catch {
       reject("E_ATTESTATION_FAILED", "Could not provision hardware key", error)
@@ -567,6 +593,36 @@ class RNAttestationMobile: NSObject {
         ])
       } catch {
         reject("E_CAPTURE_FAILED", "captureAndSignAtomic failed: \(error.localizedDescription)", error)
+      }
+    }
+  }
+
+  @objc
+  func prefetchLocation(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .userInitiated).async { [self] in
+      // Return cached location if less than 30 seconds old
+      if let cached = cachedLocation,
+         let ts = cachedLocationTimestamp,
+         Date().timeIntervalSince(ts) < 30.0 {
+        resolve([
+          "latitude": cached.coordinate.latitude,
+          "longitude": cached.coordinate.longitude
+        ])
+        return
+      }
+
+      if let loc = OneShotLocationFetcher().fetch() {
+        cachedLocation = loc
+        cachedLocationTimestamp = Date()
+        resolve([
+          "latitude": loc.coordinate.latitude,
+          "longitude": loc.coordinate.longitude
+        ])
+      } else {
+        resolve(NSNull())
       }
     }
   }

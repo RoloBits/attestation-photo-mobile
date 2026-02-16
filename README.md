@@ -64,42 +64,61 @@ The Rust shared library is compiled automatically via a Gradle task. Just build 
 
 ## Quick start
 
-This library is headless. It handles attestation and signing only. You bring your own camera like `react-native-vision-camera`, `expo-camera`, or any source that produces a JPEG path. See the [example app](./example/) for a full camera UI implementation.
+This library is headless, it handles attestation and signing, you bring your own camera (`react-native-vision-camera`, `expo-camera`, or anything that produces a JPEG path). See the [example app](./example/) for a full implementation.
 
 ```tsx
-import {
-  ensureHardwareKey,
-  getAttestationStatus,
-  captureAndSignAtomic,
-  saveToGallery,
-} from "@rolobits/attestation-photo-mobile";
+import { useRef, useCallback } from "react";
+import { Camera, useCameraDevice, useCameraPermission } from "react-native-vision-camera";
+import { useAttestedCapture, saveToGallery } from "@rolobits/attestation-photo-mobile";
 
-// 1. Provision the hardware key (call once, idempotent)
-await ensureHardwareKey();
+function CaptureScreen() {
+  const cameraRef = useRef<Camera>(null);
+  const device = useCameraDevice("back");
+  const { hasPermission, requestPermission } = useCameraPermission();
 
-// 2. Check device integrity
-const status = await getAttestationStatus();
-if (status.isCompromised) throw new Error("Device compromised");
+  const { signPhoto, status, isReady } = useAttestedCapture({
+    includeLocation: true,               // embed GPS in the C2PA manifest
+    appName: "My App",                   // shown in Content Credentials
+    nonce: "server-challenge-token",     // replay prevention
+  });
 
-// 3. Take a photo with any camera library
-const rawPhoto = await camera.current.takePhoto();
+  const onPressCapture = useCallback(async () => {
+    // 1. Take a photo with VisionCamera
+    const rawPhoto = await cameraRef.current!.takePhoto();
 
-// 4. Sign and embed the C2PA manifest into the JPEG
-const signed = await captureAndSignAtomic({
-  sourcePhotoPath: rawPhoto.path,
-  includeLocation: true,               // embed GPS in the manifest
-  nonce: "server-challenge-token",      // replay prevention
-  appName: "My App",
-});
-// signed.path           → JPEG with embedded C2PA manifest
-// signed.trustLevel     → "secure_enclave" | "strongbox" | "tee"
-// signed.embeddedManifest → true
+    // 2. Sign & embed the C2PA manifest — that's it
+    const signed = await signPhoto(rawPhoto.path);
 
-// 5. Optionally save to the device gallery
-await saveToGallery({ filePath: signed.path });
+    // 3. (Optional) save to gallery
+    await saveToGallery({ filePath: signed.path });
+  }, [signPhoto]);
+
+  return <Camera ref={cameraRef} device={device!} isActive photo />;
+}
 ```
 
-### Available functions
+`useAttestedCapture` handles everything behind the scenes: hardware key provisioning, device integrity checks, location prefetch & refresh, `file://` prefix stripping, and error wrapping into typed `AttestedCameraError` codes.
+
+### `useAttestedCapture` options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `includeLocation` | `boolean` | `false` | Embed GPS coordinates in the C2PA manifest. |
+| `requireTrustedHardware` | `boolean` | `true` | Reject signing on devices without Secure Enclave / StrongBox / TEE. |
+| `appName` | `string` | `"Attestation Mobile"` | App name shown in C2PA Content Credentials. |
+| `nonce` | `string` | — | Server challenge token for replay prevention. |
+
+### `useAttestedCapture` return value
+
+| Property | Type | Description |
+|---|---|---|
+| `signPhoto` | `(photoPath: string) => Promise<SignedPhoto>` | Sign a photo at the given path. Strips `file://` prefix automatically. Rejects with `AttestedCameraError` on trust or signing failures. |
+| `status` | `AttestationStatus \| null` | Current attestation status (`null` while loading on mount). |
+| `isReady` | `boolean` | `true` once key provisioning and status check have completed. |
+
+### Lower-level functions
+
+For advanced use cases where you need full control over each step, every function the hook uses is also exported individually:
 
 | Function | Returns | Description |
 |---|---|---|
@@ -109,6 +128,7 @@ await saveToGallery({ filePath: signed.path });
 | `saveToGallery(params)` | `Promise<{ uri }>` | Save a file to the device photo gallery. |
 | `hashPhotoAtPath(params)` | `Promise<{ sha256Hex }>` | Compute the SHA-256 hash of a photo file. |
 | `signPayload(params)` | `Promise<{ signatureBase64, trustLevel }>` | Sign arbitrary base64 data with the hardware key. |
+| `prefetchLocation()` | `Promise<{ latitude, longitude } \| null>` | Pre-fetch GPS location in background for faster captures. |
 
 ## SignedPhoto
 
