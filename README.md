@@ -150,14 +150,9 @@ The verifier will show a valid signature with an unknown signer. This is expecte
 
 ## Limitations
 
-Understand these gaps before relying on this SDK for high-assurance use cases.
-
 - **Self-signed certificates** — The signing key has a self-signed X.509 certificate with no CA chain. Verifiers will report an unknown signer. Tamper detection works, but attribution requires a CA integration (not yet implemented).
 - **Camera injection** — On a compromised device, an attacker could feed synthetic frames to the camera API. The SDK signs whatever the camera returns.
 - **Heuristic root detection** — Jailbreak/root detection uses basic signals. Sophisticated root hides are not detected. Consider layering with Play Integrity (Android) or App Attest (iOS) for higher assurance.
-- **No timestamping authority** — The capture timestamp is self-reported by the device clock. There is no countersignature from a trusted time server.
-- **No remote attestation** — The SDK does not verify the device's boot chain or OS integrity with a remote server. The `trustLevel` field is self-reported.
-- **Photo only** — Video recording is not supported or attested.
 
 ## Platform requirements
 
