@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/RoloBits/attestation-photo-mobile/compare/v1.1.6...v1.2.0) (2026-02-16)
+
+
+### Features
+
+* add ios support ([f9f7308](https://github.com/RoloBits/attestation-photo-mobile/commit/f9f7308a72ad45d47df994522b52578e6e54ac9e))
+
 ## [1.1.6](https://github.com/RoloBits/attestation-photo-mobile/compare/v1.1.5...v1.1.6) (2026-02-15)
 
 
