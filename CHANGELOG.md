@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/RoloBits/attestation-photo-mobile/compare/v1.2.2...v1.3.0) (2026-02-16)
+
+
+### Features
+
+* add cache and improve performance ([31b1969](https://github.com/RoloBits/attestation-photo-mobile/commit/31b1969d4e8e745b2280a97605884f5156039fce))
+
 ## [1.2.2](https://github.com/RoloBits/attestation-photo-mobile/compare/v1.2.1...v1.2.2) (2026-02-16)
 
 
