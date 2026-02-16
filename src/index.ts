@@ -1,9 +1,19 @@
-export { AttestedCamera } from "./AttestedCamera";
+export {
+  captureAndSignAtomic,
+  ensureHardwareKey,
+  getAttestationStatus,
+  hashPhotoAtPath,
+  saveToGallery,
+  signPayload
+} from "./nativeBridge";
 export type {
   AttestationStatus,
   AttestedCameraError,
-  AttestedCameraProps,
+  CaptureAndSignParams,
   CaptureMetadata,
+  HashPhotoAtPathParams,
   PlatformTrustLevel,
-  SignedPhoto
+  SaveToGalleryParams,
+  SignedPhoto,
+  SignPayloadParams
 } from "./types";

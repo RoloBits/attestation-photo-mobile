@@ -37,6 +37,8 @@
 	<string>This app uses the camera to capture attested photos.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>This app embeds GPS coordinates in attested photos for content provenance.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>This app saves attested photos to your photo library.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

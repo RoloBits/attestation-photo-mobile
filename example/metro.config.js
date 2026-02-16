@@ -12,6 +12,9 @@ const config = {
       path.resolve(__dirname, 'node_modules'),
       path.resolve(libraryRoot, 'node_modules'),
     ],
+    extraNodeModules: {
+      '@rolobits/attestation-photo-mobile': libraryRoot,
+    },
     // Prevent duplicate react / react-native from the library root
     blockList: [
       new RegExp(escape(path.resolve(libraryRoot, 'node_modules', 'react-native', '.*'))),

@@ -1,9 +1,7 @@
-import React, {useState, useCallback, useEffect, useRef} from 'react';
+import React, {useState, useCallback, useEffect} from 'react';
 import {
   Alert,
-  FlatList,
   Image,
-  NativeModules,
   PermissionsAndroid,
   Platform,
   Pressable,
@@ -14,11 +12,10 @@ import {
   Text,
   View,
 } from 'react-native';
-import {AttestedCamera} from '@rolobits/attestation-photo-mobile';
-import type {
-  SignedPhoto,
-  AttestedCameraError,
-} from '@rolobits/attestation-photo-mobile';
+import {AttestedCamera} from './src/AttestedCamera';
+import type {AttestedCameraError} from './src/types';
+import type {SignedPhoto} from '@rolobits/attestation-photo-mobile';
+import {saveToGallery} from '@rolobits/attestation-photo-mobile';
 
 type AppState =
   | {kind: 'camera'}
@@ -36,16 +33,11 @@ function trustBadge(level: string): {label: string; color: string} {
   }
 }
 
-type LogEntry = {id: string; time: string; msg: string; isError: boolean};
-
 export default function App() {
   const [state, setState] = useState<AppState>({kind: 'camera'});
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const logListRef = useRef<FlatList<LogEntry>>(null);
-  const logIdRef = useRef(0);
 
   useEffect(() => {
     if (Platform.OS === 'android') {
@@ -60,18 +52,10 @@ export default function App() {
     }
   }, []);
 
-  const addLog = useCallback((msg: string) => {
-    const time = new Date().toLocaleTimeString('en-US', {hour12: false, fractionalSecondDigits: 3});
-    const id = String(++logIdRef.current);
-    const isError = msg.includes('ERROR') || msg.includes('failed');
-    setLogs(prev => [...prev, {id, time, msg, isError}]);
-  }, []);
-
   const handleSaveToGallery = useCallback(async (photoPath: string) => {
     if (saving || saved) return;
     setSaving(true);
     try {
-      // Request WRITE_EXTERNAL_STORAGE on pre-Q Android (API 28)
       if (Platform.OS === 'android' && (Platform.Version as number) < 29) {
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
@@ -87,9 +71,8 @@ export default function App() {
         }
       }
 
-      const native = NativeModules.RNAttestationMobile;
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      await native.saveToGallery({
+      await saveToGallery({
         filePath: photoPath,
         fileName: `attested_${timestamp}.jpg`,
       });
@@ -130,7 +113,6 @@ export default function App() {
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" />
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          {/* Photo preview */}
           <View style={styles.previewContainer}>
             <Image
               source={{uri: photoUri}}
@@ -139,7 +121,6 @@ export default function App() {
             />
           </View>
 
-          {/* Attestation summary card */}
           <View style={styles.summaryCard}>
             <View style={styles.summaryRow}>
               <View style={[styles.badge, {backgroundColor: badge.color}]}>
@@ -167,7 +148,6 @@ export default function App() {
             )}
           </View>
 
-          {/* Action buttons */}
           <View style={styles.actionRow}>
             <Pressable
               style={({pressed}) => [
@@ -183,7 +163,6 @@ export default function App() {
             </Pressable>
           </View>
 
-          {/* Expandable details */}
           <Pressable
             onPress={() => setDetailsExpanded(prev => !prev)}
             style={styles.detailsToggle}>
@@ -202,7 +181,6 @@ export default function App() {
               </View>
             ))}
 
-          {/* Take another */}
           <Pressable
             style={({pressed}) => [styles.button, pressed && styles.buttonPressed]}
             onPress={() => {
@@ -220,49 +198,24 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
-      {/* Top half: camera */}
-      <View style={styles.cameraHalf}>
-        <AttestedCamera
-          style={styles.camera}
-          requireTrustedHardware={false}
-          includeLocation={true}
-          onLog={addLog}
-          onCapture={(photo: SignedPhoto) => {
-            addLog(`[App] Capture complete: ${photo.path}`);
-            setState({kind: 'result', photo});
-          }}
-          onError={(error: AttestedCameraError) => {
-            addLog(`[App] ERROR: ${error.code} — ${error.message}`);
-            Alert.alert('Capture Error', `${error.code}\n${error.message}`);
-          }}
-        />
-      </View>
-      {/* Bottom half: log panel */}
-      <View style={styles.logPanel}>
-        <View style={styles.logHeader}>
-          <Text style={styles.logHeaderText}>Debug Log</Text>
-          <Pressable onPress={() => setLogs([])} style={styles.clearButton}>
-            <Text style={styles.clearButtonText}>Clear</Text>
-          </Pressable>
-        </View>
-        <FlatList
-          ref={logListRef}
-          data={logs}
-          keyExtractor={item => item.id}
-          style={styles.logList}
-          onContentSizeChange={() => logListRef.current?.scrollToEnd({animated: true})}
-          renderItem={({item}) => (
-            <Text style={item.isError ? styles.logLineError : styles.logLine} selectable>
-              <Text style={styles.logTime}>{item.time}</Text>
-              {'  '}
-              {item.msg}
-            </Text>
-          )}
-          ListEmptyComponent={
-            <Text style={styles.logEmpty}>Waiting for capture...</Text>
-          }
-        />
-      </View>
+      <AttestedCamera
+        style={styles.camera}
+        requireTrustedHardware={false}
+        includeLocation={true}
+        enableZoomSlider
+        enableFocusTap
+        enableTorch
+        enableFlashMode
+        enableCameraSwitch
+        enableExposureSlider
+        enableQualitySelector
+        onCapture={(photo: SignedPhoto) => {
+          setState({kind: 'result', photo});
+        }}
+        onError={(error: AttestedCameraError) => {
+          Alert.alert('Capture Error', `${error.code}\n${error.message}`);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -272,79 +225,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
   },
-  cameraHalf: {
-    flex: 1,
-  },
   camera: {
     flex: 1,
-  },
-  // --- Log panel ---
-  logPanel: {
-    flex: 1,
-    backgroundColor: '#0a0a0a',
-    borderTopWidth: 1,
-    borderTopColor: '#333',
-  },
-  logHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#1a1a1a',
-  },
-  logHeaderText: {
-    color: '#888',
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  clearButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 4,
-    backgroundColor: '#333',
-  },
-  clearButtonText: {
-    color: '#aaa',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  logList: {
-    flex: 1,
-    paddingHorizontal: 8,
-    paddingTop: 4,
-  },
-  logLine: {
-    color: '#39ff14',
-    fontSize: 11,
-    fontFamily: 'monospace',
-    lineHeight: 16,
-    paddingVertical: 1,
-  },
-  logLineError: {
-    color: '#ff5252',
-    fontSize: 11,
-    fontFamily: 'monospace',
-    lineHeight: 16,
-    paddingVertical: 1,
-  },
-  logTime: {
-    color: '#666',
-  },
-  logEmpty: {
-    color: '#555',
-    fontSize: 12,
-    fontFamily: 'monospace',
-    textAlign: 'center',
-    marginTop: 20,
   },
   scrollContent: {
     padding: 16,
     paddingBottom: 48,
   },
-  // --- Photo preview ---
   previewContainer: {
     borderRadius: 16,
     overflow: 'hidden',
@@ -355,7 +242,6 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 3 / 4,
   },
-  // --- Summary card ---
   summaryCard: {
     backgroundColor: '#1e1e1e',
     borderRadius: 12,
@@ -395,7 +281,6 @@ const styles = StyleSheet.create({
     color: '#888',
     fontFamily: 'monospace',
   },
-  // --- Action buttons ---
   actionRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -410,7 +295,6 @@ const styles = StyleSheet.create({
   saveButtonDone: {
     backgroundColor: '#4caf50',
   },
-  // --- Details toggle ---
   detailsToggle: {
     alignSelf: 'center',
     paddingVertical: 10,
@@ -422,7 +306,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  // --- Detail rows ---
   row: {
     marginBottom: 8,
     backgroundColor: '#1e1e1e',
@@ -439,7 +322,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#fff',
   },
-  // --- Buttons ---
   button: {
     marginTop: 16,
     backgroundColor: '#6200ee',

@@ -1,6 +1,7 @@
 import Foundation
 import CoreLocation
 import CryptoKit
+import Photos
 import React
 import Security
 import UIKit
@@ -91,7 +92,8 @@ class RNAttestationMobile: NSObject {
     var item: CFTypeRef?
     let status = SecItemCopyMatching(query as CFDictionary, &item)
     guard status == errSecSuccess else { return nil }
-    return item as? SecKey
+    // swiftlint:disable:next force_cast
+    return item.map { $0 as! SecKey }
   }
 
   private func createPrivateKey() throws -> SecKey {
@@ -565,6 +567,39 @@ class RNAttestationMobile: NSObject {
         ])
       } catch {
         reject("E_CAPTURE_FAILED", "captureAndSignAtomic failed: \(error.localizedDescription)", error)
+      }
+    }
+  }
+
+  @objc
+  func saveToGallery(
+    _ params: NSDictionary,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    guard let filePath = params["filePath"] as? String else {
+      reject("E_SAVE_FAILED", "filePath is required", nil)
+      return
+    }
+    let fileURL = URL(fileURLWithPath: filePath)
+    guard FileManager.default.fileExists(atPath: filePath) else {
+      reject("E_SAVE_FAILED", "File does not exist: \(filePath)", nil)
+      return
+    }
+
+    PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+      guard status == .authorized || status == .limited else {
+        reject("E_SAVE_FAILED", "Photo library permission denied", nil)
+        return
+      }
+      PHPhotoLibrary.shared().performChanges({
+        PHAssetCreationRequest.forAsset().addResource(with: .photo, fileURL: fileURL, options: nil)
+      }) { success, error in
+        if success {
+          resolve(["saved": true])
+        } else {
+          reject("E_SAVE_FAILED", error?.localizedDescription ?? "Unknown error", error)
+        }
       }
     }
   }

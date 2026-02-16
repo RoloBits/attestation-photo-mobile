@@ -20,14 +20,13 @@ Every photo taken through this SDK is signed by the device's tamper-resistant ha
 ### 1. npm
 
 ```bash
-npm install @rolobits/attestation-photo-mobile react-native-vision-camera
+npm install @rolobits/attestation-photo-mobile
 ```
 
 | Peer dependency | Version |
 |---|---|
 | `react` | >= 18 |
 | `react-native` | >= 0.73 |
-| `react-native-vision-camera` | >= 4 |
 
 ### 2. Rust toolchain (one-time setup)
 
@@ -61,35 +60,55 @@ The Rust shared library is compiled automatically via a Gradle task. Just build 
 | Permission | iOS (`Info.plist`) | Android (`AndroidManifest.xml`) | Required? |
 |---|---|---|---|
 | Camera | `NSCameraUsageDescription` | `android.permission.CAMERA` | Yes |
-| Location | `NSLocationWhenInUseUsageDescription` | `android.permission.ACCESS_FINE_LOCATION` | Only with `includeLocation={true}` |
+| Location | `NSLocationWhenInUseUsageDescription` | `android.permission.ACCESS_FINE_LOCATION` | Only with `includeLocation: true` |
 
 ## Quick start
 
-```tsx
-import { AttestedCamera } from "@rolobits/attestation-photo-mobile";
+This library is headless — it handles attestation and signing only. You bring your own camera (e.g. `react-native-vision-camera`, `expo-camera`, or any source that produces a JPEG path). See the [example app](./example/) for a full camera UI implementation.
 
-export function CameraScreen() {
-  return (
-    <AttestedCamera
-      style={{ flex: 1 }}              // fill the screen
-      cameraPosition="back"            // "back" or "front"
-      includeLocation                  // embed GPS in the C2PA manifest
-      nonce="server-issued-challenge"  // replay prevention token from your server
-      requireTrustedHardware           // block capture without Secure Enclave / StrongBox
-      onCapture={(photo) => {
-        // photo.path            -> JPEG with embedded C2PA manifest
-        // photo.trustLevel      -> "secure_enclave" | "strongbox" | "tee"
-        // photo.embeddedManifest -> true
-        console.log("Attested capture:", photo.path);
-      }}
-      onError={(error) => {
-        // error.code -> "E_COMPROMISED_DEVICE" | "E_NO_TRUSTED_HARDWARE" | ...
-        console.error(error.code, error.message);
-      }}
-    />
-  );
-}
+```tsx
+import {
+  ensureHardwareKey,
+  getAttestationStatus,
+  captureAndSignAtomic,
+  saveToGallery,
+} from "@rolobits/attestation-photo-mobile";
+
+// 1. Provision the hardware key (call once, idempotent)
+await ensureHardwareKey();
+
+// 2. Check device integrity
+const status = await getAttestationStatus();
+if (status.isCompromised) throw new Error("Device compromised");
+
+// 3. Take a photo with any camera library
+const rawPhoto = await camera.current.takePhoto();
+
+// 4. Sign and embed the C2PA manifest into the JPEG
+const signed = await captureAndSignAtomic({
+  sourcePhotoPath: rawPhoto.path,
+  includeLocation: true,               // embed GPS in the manifest
+  nonce: "server-challenge-token",      // replay prevention
+  appName: "My App",
+});
+// signed.path           → JPEG with embedded C2PA manifest
+// signed.trustLevel     → "secure_enclave" | "strongbox" | "tee"
+// signed.embeddedManifest → true
+
+// 5. Optionally save to the device gallery
+await saveToGallery({ filePath: signed.path });
 ```
+
+### Available functions
+
+| Function | Returns | Description |
+|---|---|---|
+| `getAttestationStatus()` | `Promise<AttestationStatus>` | Check device integrity and hardware trust level. |
+| `ensureHardwareKey()` | `Promise<{ trustLevel }>` | Provision the hardware-backed signing key. Idempotent. |
+| `captureAndSignAtomic(params)` | `Promise<SignedPhoto>` | Hash, sign, and embed a C2PA manifest into a JPEG. |
+| `saveToGallery(params)` | `Promise<{ uri }>` | Save a file to the device photo gallery. |
+| `hashPhotoAtPath(params)` | `Promise<{ sha256Hex }>` | Compute the SHA-256 hash of a photo file. |
+| `signPayload(params)` | `Promise<{ signatureBase64, trustLevel }>` | Sign arbitrary base64 data with the hardware key. |
 
 ## How it works
 
@@ -97,7 +116,7 @@ export function CameraScreen() {
 User presses capture
   |
   v
-[1] VisionCamera takes photo
+[1] Your app takes a photo
   |
   v
 [2] Native module reads JPEG bytes into memory
@@ -128,21 +147,9 @@ User presses capture
 
 The entire pipeline is a single native call. No unsigned file is written to disk. The private key never crosses the FFI boundary. Rust calls back into native code for every signature operation.
 
-## Props
-
-| Prop | Type | Default | Description |
-|---|---|---|---|
-| `onCapture` | `(photo: SignedPhoto) => void` | required | Called with the signed photo after a successful capture. |
-| `onError` | `(error: AttestedCameraError) => void` | `undefined` | Called when capture fails for any reason. |
-| `style` | `StyleProp<ViewStyle>` | `undefined` | Style applied to the camera container. |
-| `includeLocation` | `boolean` | `false` | Embed GPS coordinates in the C2PA manifest. |
-| `nonce` | `string` | `undefined` | Server-provided challenge for replay prevention. |
-| `requireTrustedHardware` | `boolean` | `true` | Block capture if hardware-backed keys are unavailable. |
-| `cameraPosition` | `"back" \| "front"` | `"back"` | Which camera to use. |
-
 ## SignedPhoto
 
-The object returned by `onCapture`:
+The object returned by `captureAndSignAtomic()`:
 
 ```ts
 interface SignedPhoto {
@@ -219,7 +226,7 @@ These are known limitations. Understand them before relying on this SDK for high
 
 ### Photo only, no video
 
-This SDK captures and signs **still photos only**. Video recording is not supported and calling VisionCamera's video APIs directly will produce unsigned files with no C2PA manifest.
+This SDK captures and signs **still photos only**. Video recording is not supported.
 
 ### Trust levels
 
@@ -233,10 +240,9 @@ This SDK captures and signs **still photos only**. Video recording is not suppor
 ## Project structure
 
 ```
-src/                  TypeScript API surface
-  AttestedCamera.tsx  React component wrapping VisionCamera + attestation
+src/                  TypeScript API surface (headless)
   nativeBridge.ts     Native module bridge
-  types.ts            Type definitions (SignedPhoto, errors, props)
+  types.ts            Type definitions (SignedPhoto, errors, params)
 
 native/
   ios/                Swift native module (Secure Enclave, ASN.1 cert builder)
@@ -246,6 +252,10 @@ rust/
   src/lib.rs          Rust core (C2PA builder, SHA-256, Signer adapter)
   src/attestation_mobile.udl   UniFFI interface definition
   Cargo.toml          Dependencies (c2pa, sha2, uniffi)
+
+example/
+  src/                Camera UI components (AttestedCamera, CameraControls)
+  App.tsx             Demo app showing full camera + attestation flow
 ```
 
 ## Platform requirements
@@ -276,6 +286,26 @@ npm run rust:fmt           # cargo fmt
 # Everything
 npm run check              # typecheck + lint + rust:check
 ```
+
+### Build & run the example app
+
+A `Makefile` automates building and deploying the example app to a physical device:
+
+```
+make help              Show available commands
+make devices           List connected iOS and Android devices
+
+make ios-build         Build iOS release for connected iPhone
+make ios-run           Build, install and launch on connected iPhone
+make ios-open          Open Xcode workspace (for manual signing setup)
+
+make android-apk       Build Android release APK
+make android-install   Build and install APK on connected Android device
+
+make clean             Remove all build artifacts
+```
+
+**iOS first-time setup:** Run `make ios-open`, select your Apple ID team under Signing & Capabilities, then plug in your iPhone and run `make ios-run`.
 
 ## License
 

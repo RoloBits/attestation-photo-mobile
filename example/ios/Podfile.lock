@@ -1854,7 +1854,7 @@ PODS:
     - React-utils (= 0.84.0)
     - ReactNativeDependencies
   - ReactNativeDependencies (0.84.0)
-  - RNAttestationMobile (0.0.1):
+  - RNAttestationMobile (1.1.5):
     - React-Core
   - VisionCamera (4.7.3):
     - VisionCamera/Core (= 4.7.3)
@@ -1939,7 +1939,7 @@ DEPENDENCIES:
   - ReactCodegen (from `build/generated/ios/ReactCodegen`)
   - ReactCommon/turbomodule/core (from `../node_modules/react-native/ReactCommon`)
   - ReactNativeDependencies (from `../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)
-  - "RNAttestationMobile (from `../node_modules/@RoloBits/attestation-photo-mobile`)"
+  - "RNAttestationMobile (from `../node_modules/@rolobits/attestation-photo-mobile`)"
   - VisionCamera (from `../node_modules/react-native-vision-camera`)
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
@@ -2092,7 +2092,7 @@ EXTERNAL SOURCES:
   ReactNativeDependencies:
     :podspec: "../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec"
   RNAttestationMobile:
-    :path: "../node_modules/@RoloBits/attestation-photo-mobile"
+    :path: "../node_modules/@rolobits/attestation-photo-mobile"
   VisionCamera:
     :path: "../node_modules/react-native-vision-camera"
   Yoga:
@@ -2172,7 +2172,7 @@ SPEC CHECKSUMS:
   ReactCodegen: c5e5343f6691b0cd76913b9be5e89e5a83ff3315
   ReactCommon: 92b53b0bd7f7d86154dc9f512c1ea5dee717cc72
   ReactNativeDependencies: f121ab9e66be40f895a719e7213e90c60b4a89e2
-  RNAttestationMobile: 1be137b3845a62eab7ae5e033a89c3d58a0745b0
+  RNAttestationMobile: de2cad2ee51d7fc8ac9314f910c73b2d90097410
   VisionCamera: 7187b3dac1ff3071234ead959ce311875748e14f
   Yoga: 772166513f9cd2d61a6251d0dacbbfaa5b537479
 

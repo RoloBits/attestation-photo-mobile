@@ -2,7 +2,10 @@ import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  GestureResponderEvent,
+  Platform,
   Pressable,
+  StatusBar,
   StyleSheet,
   Text,
   View
@@ -12,7 +15,19 @@ import {
   useCameraDevice,
   useCameraPermission
 } from "react-native-vision-camera";
-import { requireNativeModule } from "./nativeBridge";
+import {
+  captureAndSignAtomic,
+  ensureHardwareKey,
+  getAttestationStatus
+} from "@rolobits/attestation-photo-mobile";
+import {
+  ExposureSlider,
+  FocusIndicator,
+  QualitySelector,
+  TopBar,
+  ZoomSlider
+} from "./CameraControls";
+import { useCameraControls } from "./useCameraControls";
 import type { AttestedCameraError, AttestedCameraProps } from "./types";
 
 function toCameraError(err: unknown): AttestedCameraError {
@@ -33,20 +48,54 @@ export function AttestedCamera(props: AttestedCameraProps) {
     onCapture,
     onError,
     onCaptureStart,
-    onLog,
     includeLocation = false,
     nonce,
     requireTrustedHardware = true,
-    cameraPosition = "back",
+    cameraPosition: initialCameraPosition = "back",
     showFlash = true,
-    appName
+    appName,
+    enableZoomGesture = false,
+    enableZoomSlider = false,
+    enableFocusTap = false,
+    enableTorch = false,
+    enableFlashMode = false,
+    enableCameraSwitch = false,
+    enableExposureSlider = false,
+    enableQualitySelector = false,
+    initialFlashMode = "off",
+    initialPhotoQuality = "balanced",
+    onZoomChange,
+    onFlashModeChange,
+    onCameraPositionChange,
+    safeAreaTop = Platform.OS === "ios" ? 54 : (StatusBar.currentHeight ?? 44)
   } = props;
+
   const cameraRef = useRef<Camera>(null);
   const [capturingUI, setCapturingUI] = useState(false);
   const capturingRef = useRef(false);
   const flashOpacity = useRef(new Animated.Value(0)).current;
   const { hasPermission, requestPermission } = useCameraPermission();
+
+  // Camera position managed here so useCameraDevice gets the current value
+  const [cameraPosition, setCameraPosition] =
+    useState<"back" | "front">(initialCameraPosition);
   const device = useCameraDevice(cameraPosition);
+
+  const { state, actions } = useCameraControls(
+    device,
+    initialFlashMode,
+    initialPhotoQuality,
+    onZoomChange,
+    onFlashModeChange
+  );
+
+  const toggleCameraPosition = useCallback(() => {
+    setCameraPosition((prev) => {
+      const next = prev === "back" ? "front" : "back";
+      onCameraPositionChange?.(next);
+      return next;
+    });
+  }, [onCameraPositionChange]);
 
   const triggerFlash = useCallback(() => {
     if (!showFlash) return;
@@ -58,12 +107,23 @@ export function AttestedCamera(props: AttestedCameraProps) {
     }).start();
   }, [flashOpacity, showFlash]);
 
+  const handleTouchEnd = useCallback(
+    (e: GestureResponderEvent) => {
+      if (!enableFocusTap || !cameraRef.current || !device) return;
+      // Only handle single-finger taps
+      if (e.nativeEvent.touches?.length > 0) return;
+      const { locationX, locationY } = e.nativeEvent;
+      actions.handleFocusTap(locationX, locationY);
+      cameraRef.current.focus({ x: locationX, y: locationY }).catch(() => {});
+    },
+    [enableFocusTap, device, actions]
+  );
+
   const onPressCapture = useCallback(async () => {
     if (capturingRef.current) return;
     capturingRef.current = true;
     setCapturingUI(true);
     onCaptureStart?.();
-    const log = (msg: string) => { console.log(msg); onLog?.(msg); };
     try {
       if (!hasPermission) {
         const granted = await requestPermission();
@@ -79,14 +139,9 @@ export function AttestedCamera(props: AttestedCameraProps) {
         });
       }
 
-      const native = requireNativeModule();
+      await ensureHardwareKey();
 
-      log("[AttestedCamera] step 1: ensureHardwareKey...");
-      await native.ensureHardwareKey();
-
-      log("[AttestedCamera] step 2: getAttestationStatus...");
-      const status = await native.getAttestationStatus();
-      log(`[AttestedCamera] step 2: status = ${JSON.stringify(status)}`);
+      const status = await getAttestationStatus();
       if (status.isCompromised) {
         throw Object.assign(new Error("Compromised device"), {
           code: "E_COMPROMISED_DEVICE" as const
@@ -103,28 +158,23 @@ export function AttestedCamera(props: AttestedCameraProps) {
 
       triggerFlash();
 
-      log("[AttestedCamera] step 3: takePhoto...");
-      const rawPhoto = await cameraRef.current.takePhoto();
-      log(`[AttestedCamera] step 3: rawPhoto.path = ${rawPhoto.path}`);
+      const rawPhoto = await cameraRef.current.takePhoto({
+        flash: state.flashMode
+      });
 
       const photoPath = rawPhoto.path.startsWith("file://")
         ? rawPhoto.path.slice(7)
         : rawPhoto.path;
 
-      log("[AttestedCamera] step 4: captureAndSignAtomic...");
-      const signedPhoto = await native.captureAndSignAtomic({
+      const signedPhoto = await captureAndSignAtomic({
         includeLocation,
         nonce,
         sourcePhotoPath: photoPath,
         appName
       });
-      log("[AttestedCamera] step 5: done, calling onCapture");
       onCapture(signedPhoto);
     } catch (e) {
-      const cameraError = toCameraError(e);
-      const stack = (e as Error)?.stack ?? "";
-      log(`[AttestedCamera] capture failed: ${cameraError.code} ${cameraError.message}\n${stack}`);
-      onError?.(cameraError);
+      onError?.(toCameraError(e));
     } finally {
       capturingRef.current = false;
       setCapturingUI(false);
@@ -137,9 +187,9 @@ export function AttestedCamera(props: AttestedCameraProps) {
     onCapture,
     onCaptureStart,
     onError,
-    onLog,
     requestPermission,
     requireTrustedHardware,
+    state.flashMode,
     triggerFlash
   ]);
 
@@ -181,28 +231,76 @@ export function AttestedCamera(props: AttestedCameraProps) {
     );
   }
 
+  // Slider takes precedence over gesture to avoid desync
+  const useZoomGesture = enableZoomGesture && !enableZoomSlider;
+
   // --- Main camera view ---
   return (
-    <View style={[styles.container, props.style]}>
+    <View
+      style={[styles.container, props.style]}
+      onTouchEnd={enableFocusTap ? handleTouchEnd : undefined}
+    >
       <Camera
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         device={device}
         isActive
         photo
+        zoom={state.zoom}
+        torch={state.torch}
+        exposure={state.exposure}
+        photoQualityBalance={state.photoQuality}
+        enableZoomGesture={useZoomGesture}
       />
-
-      {/* Top gradient overlay */}
-      <View style={styles.topGradient} pointerEvents="none" />
-
-      {/* Bottom gradient overlay */}
-      <View style={styles.bottomGradient} pointerEvents="none" />
 
       {/* Flash overlay */}
       <Animated.View
         style={[styles.flashOverlay, { opacity: flashOpacity }]}
         pointerEvents="none"
       />
+
+      {/* Top bar: flash, torch, camera switch */}
+      <TopBar
+        flashMode={state.flashMode}
+        torch={state.torch}
+        hasTorch={device.hasTorch}
+        hasFlash={device.hasFlash}
+        showFlashButton={enableFlashMode}
+        showTorchButton={enableTorch}
+        showCameraSwitch={enableCameraSwitch}
+        onCycleFlash={actions.cycleFlashMode}
+        onToggleTorch={actions.toggleTorch}
+        onToggleCamera={toggleCameraPosition}
+        safeAreaTop={safeAreaTop}
+      />
+
+      {/* Zoom slider */}
+      {enableZoomSlider && (
+        <ZoomSlider
+          zoom={state.zoom}
+          device={device}
+          onChange={actions.setZoom}
+          safeAreaTop={safeAreaTop}
+        />
+      )}
+
+      {/* Exposure slider */}
+      {enableExposureSlider && (
+        <ExposureSlider
+          exposure={state.exposure}
+          device={device}
+          onChange={actions.setExposure}
+          safeAreaTop={safeAreaTop}
+        />
+      )}
+
+      {/* Focus indicator */}
+      {enableFocusTap && state.focusPoint && (
+        <FocusIndicator
+          point={state.focusPoint}
+          onAnimationDone={actions.clearFocusPoint}
+        />
+      )}
 
       {/* Bottom controls */}
       <View style={styles.bottomBar}>
@@ -212,15 +310,26 @@ export function AttestedCamera(props: AttestedCameraProps) {
             <Text style={styles.signingText}>Signing...</Text>
           </View>
         ) : (
-          <Pressable
-            onPress={onPressCapture}
-            style={({ pressed }) => [
-              styles.shutterOuter,
-              pressed && styles.shutterPressed
-            ]}
-          >
-            <View style={styles.shutterInner} />
-          </Pressable>
+          <View style={styles.bottomRow}>
+            {enableQualitySelector ? (
+              <QualitySelector
+                quality={state.photoQuality}
+                onCycle={actions.cyclePhotoQuality}
+              />
+            ) : (
+              <View style={styles.bottomSpacer} />
+            )}
+            <Pressable
+              onPress={onPressCapture}
+              style={({ pressed }) => [
+                styles.shutterOuter,
+                pressed && styles.shutterPressed
+              ]}
+            >
+              <View style={styles.shutterInner} />
+            </Pressable>
+            <View style={styles.bottomSpacer} />
+          </View>
         )}
       </View>
     </View>
@@ -231,23 +340,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#000"
-  },
-  // --- Gradient overlays ---
-  topGradient: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 120,
-    backgroundColor: "rgba(0,0,0,0.4)"
-  },
-  bottomGradient: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 160,
-    backgroundColor: "rgba(0,0,0,0.5)"
   },
   // --- Flash ---
   flashOverlay: {
@@ -263,6 +355,17 @@ const styles = StyleSheet.create({
     height: 140,
     alignItems: "center",
     justifyContent: "center"
+  },
+  bottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    paddingHorizontal: 24,
+    gap: 24
+  },
+  bottomSpacer: {
+    width: 52
   },
   // --- Shutter button ---
   shutterOuter: {

@@ -1,5 +1,3 @@
-import type { StyleProp, ViewStyle } from "react-native";
-
 export type PlatformTrustLevel =
   | "secure_enclave"
   | "strongbox"
@@ -55,18 +53,26 @@ export interface AttestedCameraError extends Error {
     | "E_C2PA_EMBED_FAILED";
 }
 
-export interface AttestedCameraProps {
-  onCapture: (photo: SignedPhoto) => void;
-  onError?: (error: AttestedCameraError) => void;
-  onCaptureStart?: () => void;
-  onLog?: (message: string) => void;
-  style?: StyleProp<ViewStyle>;
-  includeLocation?: boolean;
+// --- Headless API param types ---
+
+export interface CaptureAndSignParams {
+  sourcePhotoPath: string;
+  includeLocation: boolean;
   nonce?: string;
-  requireTrustedHardware?: boolean;
-  cameraPosition?: "back" | "front";
-  /** Show white flash effect on capture. Default: true */
-  showFlash?: boolean;
-  /** App name shown in C2PA Content Credentials (signer identity, manifest, author). Default: "Attestation Mobile" */
+  latitude?: number;
+  longitude?: number;
   appName?: string;
+}
+
+export interface SaveToGalleryParams {
+  filePath: string;
+  fileName?: string;
+}
+
+export interface HashPhotoAtPathParams {
+  sourcePhotoPath: string;
+}
+
+export interface SignPayloadParams {
+  payloadBase64: string;
 }

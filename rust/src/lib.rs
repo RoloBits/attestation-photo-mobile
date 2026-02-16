@@ -313,7 +313,6 @@ fn hash_bytes(data: &[u8]) -> AtomicHashResult {
 // ---------------------------------------------------------------------------
 
 fn build_manifest_definition(context: &CaptureContext) -> String {
-    // Extract manufacturer (first word) from device_model, e.g. "Samsung" from "Samsung Galaxy S24"
     let make = context
         .device_model
         .split_whitespace()
@@ -442,19 +441,7 @@ pub fn build_and_sign_c2pa(
     context: CaptureContext,
     signer: Box<dyn HardwareSigner>,
 ) -> Result<C2paSignedPhoto, AttestationError> {
-    #[cfg(debug_assertions)]
-    eprintln!(
-        "[attestation-mobile] build_and_sign_c2pa: jpeg_bytes.len={}, first_4={:02X?}",
-        jpeg_bytes.len(),
-        &jpeg_bytes[..std::cmp::min(4, jpeg_bytes.len())]
-    );
-
     if jpeg_bytes.len() < 2 || jpeg_bytes[0] != 0xFF || jpeg_bytes[1] != 0xD8 {
-        #[cfg(debug_assertions)]
-        eprintln!(
-            "[attestation-mobile] JPEG validation failed: expected SOI FF D8, got {:02X?}",
-            &jpeg_bytes[..std::cmp::min(2, jpeg_bytes.len())]
-        );
         return Err(AttestationError::JpegValidationFailed);
     }
 
@@ -463,15 +450,7 @@ pub fn build_and_sign_c2pa(
     let asset_hash = hash_bytes(&jpeg_bytes);
     let manifest_json = build_manifest_definition(&context);
 
-    #[cfg(debug_assertions)]
-    eprintln!(
-        "[attestation-mobile] manifest_json: {}",
-        &manifest_json[..std::cmp::min(200, manifest_json.len())]
-    );
-
     let mut builder = c2pa::Builder::from_json(&manifest_json).map_err(|e| {
-        #[cfg(debug_assertions)]
-        eprintln!("[attestation-mobile] Builder::from_json error: {:?}", e);
         set_error_detail(format!("{:?}", e));
         AttestationError::ManifestBuildFailed
     })?;
@@ -479,29 +458,15 @@ pub fn build_and_sign_c2pa(
     let mut source = Cursor::new(&jpeg_bytes);
     let mut dest = Cursor::new(Vec::new());
 
-    #[cfg(debug_assertions)]
-    eprintln!(
-        "[attestation-mobile] calling builder.sign with {} bytes of JPEG...",
-        jpeg_bytes.len()
-    );
-
     builder
         .sign(&adapter, "image/jpeg", &mut source, &mut dest)
         .map_err(|e| {
-            #[cfg(debug_assertions)]
-            eprintln!("[attestation-mobile] builder.sign error: {:?}", e);
             set_error_detail(format!("{:?}", e));
             match &e {
                 c2pa::Error::BadParam(_) => AttestationError::SigningFailed,
                 _ => AttestationError::JpegEmbedFailed,
             }
         })?;
-
-    #[cfg(debug_assertions)]
-    eprintln!(
-        "[attestation-mobile] sign succeeded, output {} bytes",
-        dest.get_ref().len()
-    );
 
     Ok(C2paSignedPhoto {
         signed_jpeg: dest.into_inner(),

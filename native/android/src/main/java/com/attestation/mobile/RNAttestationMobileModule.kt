@@ -21,7 +21,6 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
-import android.util.Log
 import java.io.File
 import java.math.BigInteger
 import java.util.concurrent.CountDownLatch
@@ -43,10 +42,6 @@ import uniffi.attestation_mobile.buildAndSignC2pa
 
 class RNAttestationMobileModule(context: ReactApplicationContext) :
   ReactContextBaseJavaModule(context) {
-
-  companion object {
-    private const val TAG = "RNAttestationMobile"
-  }
 
   private val keyAlias = "com.attestation.mobile.signingkey"
 
@@ -157,22 +152,15 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
     val retryDelayMs = 100L
     while (retries < maxRetries) {
       if (source.exists() && source.length() > 100) break
-      Log.d(TAG, "loadSourcePhoto: waiting for file (attempt ${retries + 1}/$maxRetries), exists=${source.exists()}, size=${if (source.exists()) source.length() else -1}")
       Thread.sleep(retryDelayMs)
       retries++
     }
 
     if (!source.exists() || source.length() <= 0) {
-      Log.e(TAG, "loadSourcePhoto: file missing or empty after $maxRetries retries: $sourcePath")
       throw IllegalStateException("source image is missing or empty: $sourcePath")
     }
 
-    val bytes = source.readBytes()
-    Log.d(TAG, "loadSourcePhoto: read ${bytes.size} bytes from $sourcePath")
-    if (bytes.size >= 4) {
-      Log.d(TAG, "loadSourcePhoto: first 4 bytes = ${bytes.take(4).joinToString(" ") { String.format("%02X", it) }}")
-    }
-    return source.absolutePath to bytes
+    return source.absolutePath to source.readBytes()
   }
 
   @Suppress("MissingPermission")
@@ -181,7 +169,6 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
     val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
     val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
     if (!hasFine && !hasCoarse) {
-      Log.d(TAG, "fetchLocationWithTimeout: no location permission, skipping GPS")
       return null
     }
 
@@ -213,11 +200,8 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
 
     for (provider in providers) {
       try {
-        Log.d(TAG, "fetchLocationWithTimeout: requesting single update from $provider")
         locationManager.requestSingleUpdate(provider, listener, looper)
-      } catch (t: Throwable) {
-        Log.d(TAG, "fetchLocationWithTimeout: $provider unavailable: ${t.message}")
-      }
+      } catch (_: Throwable) {}
     }
 
     // Wait up to 5 seconds for a fix (matches iOS timeout)
@@ -229,12 +213,9 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
     } catch (_: Throwable) {}
 
     if (gotFix && result != null) {
-      Log.d(TAG, "fetchLocationWithTimeout: active fix lat=${result!!.latitude}, lon=${result!!.longitude}, provider=${result!!.provider}")
       return result
     }
 
-    // Fallback: check cached last-known location
-    Log.d(TAG, "fetchLocationWithTimeout: active request timed out, trying getLastKnownLocation")
     val fallbackProviders = mutableListOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       fallbackProviders.add(LocationManager.FUSED_PROVIDER)
@@ -250,11 +231,6 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
       } catch (_: Throwable) {}
     }
 
-    if (best != null) {
-      Log.d(TAG, "fetchLocationWithTimeout: fallback lat=${best.latitude}, lon=${best.longitude}, provider=${best.provider}")
-    } else {
-      Log.d(TAG, "fetchLocationWithTimeout: no location available")
-    }
     return best
   }
 
@@ -323,8 +299,6 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
       ?: throw IllegalStateException("No certificate found for key alias: $keyAlias")
     val pubKeyBytes = existingCert.publicKey.encoded // SubjectPublicKeyInfo DER
 
-    // Extract SubjectPublicKeyInfo from the existing cert's public key
-    // pubKeyBytes is already a DER-encoded SubjectPublicKeyInfo
     val subjectPublicKeyInfo = pubKeyBytes
 
     // Serial number (from current time)
@@ -584,22 +558,11 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
           longitude = longitude
         )
 
-        // Single Rust call: hash -> build manifest -> sign (callback) -> embed JUMBF
-        Log.d(TAG, "captureAndSignAtomic: calling buildAndSignC2pa with ${captureBytes.size} bytes")
-        if (captureBytes.size >= 4) {
-          Log.d(TAG, "captureAndSignAtomic: JPEG header = ${captureBytes.take(4).joinToString(" ") { String.format("%02X", it) }}")
-        }
-        val c2paResult = try {
-          buildAndSignC2pa(
-            jpegBytes = captureBytes,
-            context = context,
-            signer = signer
-          )
-        } catch (e: Throwable) {
-          Log.e(TAG, "captureAndSignAtomic: buildAndSignC2pa failed", e)
-          throw e
-        }
-        Log.d(TAG, "captureAndSignAtomic: buildAndSignC2pa succeeded, signed JPEG = ${c2paResult.signedJpeg.size} bytes")
+        val c2paResult = buildAndSignC2pa(
+          jpegBytes = captureBytes,
+          context = context,
+          signer = signer
+        )
 
         // Atomic write of signed JPEG (replaces unsigned original)
         val destFile = File(sourcePath)
@@ -656,7 +619,6 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
           return@Thread
         }
         val sourceFile = File(filePath)
-        Log.d(TAG, "saveToGallery: filePath=$filePath, exists=${sourceFile.exists()}, size=${if (sourceFile.exists()) sourceFile.length() else -1}")
         if (!sourceFile.exists()) {
           promise.reject("E_SAVE_FAILED", "File does not exist: $filePath")
           return@Thread
@@ -664,7 +626,6 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
 
         val fileName = params.getString("fileName")
           ?: "attested_${System.currentTimeMillis()}.jpg"
-        Log.d(TAG, "saveToGallery: fileName=$fileName")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
           saveToGalleryQ(sourceFile, fileName, promise)
@@ -672,7 +633,6 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
           saveToGalleryPreQ(sourceFile, fileName, promise)
         }
       } catch (t: Throwable) {
-        Log.e(TAG, "saveToGallery failed", t)
         promise.reject("E_SAVE_FAILED", "Failed to save to gallery: ${t.message}", t)
       }
     }.start()
@@ -687,28 +647,21 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
       put(MediaStore.Images.Media.IS_PENDING, 1)
     }
 
-    Log.d(TAG, "saveToGalleryQ: inserting MediaStore entry")
     val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
     if (uri == null) {
-      Log.e(TAG, "saveToGalleryQ: MediaStore.insert returned null")
       promise.reject("E_SAVE_FAILED", "Failed to create MediaStore entry")
       return
     }
-    Log.d(TAG, "saveToGalleryQ: MediaStore entry created: $uri")
 
     var success = false
     try {
       val outputStream = resolver.openOutputStream(uri)
       if (outputStream == null) {
-        Log.e(TAG, "saveToGalleryQ: openOutputStream returned null for $uri")
         promise.reject("E_SAVE_FAILED", "Failed to open output stream")
         return
       }
       outputStream.use { os ->
-        sourceFile.inputStream().use { inputStream ->
-          val bytesCopied = inputStream.copyTo(os)
-          Log.d(TAG, "saveToGalleryQ: copied $bytesCopied bytes")
-        }
+        sourceFile.inputStream().use { it.copyTo(os) }
       }
       success = true
     } finally {
@@ -718,19 +671,12 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
           put(MediaStore.Images.Media.DATE_TAKEN, System.currentTimeMillis())
           put(MediaStore.Images.Media.SIZE, sourceFile.length())
         }
-        val rowsUpdated = resolver.update(uri, updateValues, null, null)
-        Log.d(TAG, "saveToGalleryQ: IS_PENDING cleared, rowsUpdated=$rowsUpdated")
-        if (rowsUpdated == 0) {
-          Log.w(TAG, "saveToGalleryQ: update() returned 0 — IS_PENDING may not have been cleared")
-        }
+        resolver.update(uri, updateValues, null, null)
       } else {
-        // Clean up orphaned pending entry
         resolver.delete(uri, null, null)
-        Log.d(TAG, "saveToGalleryQ: cleaned up failed MediaStore entry")
       }
     }
 
-    Log.d(TAG, "saveToGalleryQ: saved successfully to $uri")
     val result = Arguments.createMap()
     result.putString("uri", uri.toString())
     promise.resolve(result)
@@ -740,33 +686,23 @@ class RNAttestationMobileModule(context: ReactApplicationContext) :
     val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
     val attestationDir = File(picturesDir, "Attestation")
     if (!attestationDir.exists()) {
-      val created = attestationDir.mkdirs()
-      Log.d(TAG, "saveToGalleryPreQ: created dir=${attestationDir.absolutePath}, success=$created")
-      if (!created) {
+      if (!attestationDir.mkdirs()) {
         promise.reject("E_SAVE_FAILED", "Failed to create Pictures/Attestation directory")
         return
       }
     }
 
     val destFile = File(attestationDir, fileName)
-    Log.d(TAG, "saveToGalleryPreQ: copying to ${destFile.absolutePath}")
     sourceFile.inputStream().use { input ->
-      destFile.outputStream().use { output ->
-        val bytesCopied = input.copyTo(output)
-        Log.d(TAG, "saveToGalleryPreQ: copied $bytesCopied bytes")
-      }
+      destFile.outputStream().use { input.copyTo(it) }
     }
 
-    // Notify media scanner so the file appears in gallery
     MediaScannerConnection.scanFile(
       reactApplicationContext,
       arrayOf(destFile.absolutePath),
-      arrayOf("image/jpeg")
-    ) { path, scannedUri ->
-      Log.d(TAG, "saveToGalleryPreQ: media scan complete, path=$path, uri=$scannedUri")
-    }
-
-    Log.d(TAG, "saveToGalleryPreQ: saved successfully to ${destFile.absolutePath}")
+      arrayOf("image/jpeg"),
+      null
+    )
     val result = Arguments.createMap()
     result.putString("uri", destFile.absolutePath)
     promise.resolve(result)
